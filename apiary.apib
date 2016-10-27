@@ -225,7 +225,7 @@ Rule | Params | Description
 `exclusion` | `[enum]` | Field value should NOT be in `enum`.
 `subset` | `[set]` | Field value should be subset of `set`.
 `length` | `[min:_, max:_, is:_, exclusive:true|false]` | List or string length should be equal to `is` value, less than `max` and bigger than `min` value. Params is optional, but one of them should always be present. `exclusive` is false by default.
-`number` | `[greater_than:_, less_than:_, multiple_of:_, exclusive:true|false]` | The field value must be a number that is greater than `greater_than` and less than `less_than`. `exclusive` is a flag that tells is this values is exclusive.
+`number` | `[greater_than:_, less_than:_, greater_than_or_equal_to:_, less_than_or_equal_to:_, multiple_of:_, ]` | The field value must be a number that is greater than `greater_than` and less than `less_than`.
 `confirmation` | `[]` | The field value of field must match confirmed field (eg. `password_confirmation` should match `password`).
 `acceptance` | `[]` | The field value should be true.
 `email` | `[patterns]` | The field value must be a valid email address respectively to `patterns`.
