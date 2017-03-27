@@ -14,10 +14,10 @@ We use built-in HTTP features, like HTTP authentication and HTTP verbs, which ar
 As per RESTful design patterns, API implements following HTTP verbs:
 
 - `HEAD` - Can be issued against any resource to get just the HTTP header info.
-- `GET` - Read resources.
+- `GET` - Read resources. Should hever change resources on server (idempotency) since most of http proxies and services may reply same request multiple times.
 - `POST` - Create new resources.
-- `PUT` - Replace resources (basically field values) or collections. Sometimes `PUT` is used as `insert or update` method, when we want clients to don't care whenever entity is exists in our system.
-- `PATCH` - Same as `PUT`, but we never use it for `insert or update` strategy. Should only occur in applications where `insert of update` is present.
+- `PUT` - Replace resources. Idempotent. (Can be used as `insert or update` method, when we want clients to don't care whenever entity is exists in our system.)
+- `PATCH` - Same as `PUT`, but replaces subset of fields instead of full entity. Should never be used as `insert of update` pattern.
 - `DELETE` - Remove resources.
 
 ## HTTP status codes
@@ -26,14 +26,21 @@ HTTP Code | Description
 --------- | -----------
 `200` | Everything worked as expected.
 `201` | Created.
+`202` | Accepted. Returned when created a finite-state machine or business process, that is not yet in final state to suggest front-end that it should re-query results and take appropriate actions.
+`204` | No Content. Deletion of not-existent resource.
 `400` | Bad Request. The request was unacceptable, often due to missing a required parameter. Or request contains invalid JSON. Duplicate idempotency key.
 `401` | Unauthorized. No valid API key provided or API key doesn't match project.
 `402` | The parameters were valid but the request failed.
 `403` | Source or destination account is disabled.
 `404` | Not Found. The requested resource doesn't exist.
 `415` | Incorrect ```Content-Type``` HTTP header.
+`422` | Logical error. For example, POST'ed resource did not pass validation.
 `429` | Too Many Requests. Rate limit is exceeded.
 `500` `502` `503` `504` | Server Errors. Something went wrong on our end. (These are rare.)
+
+## Field naming
+
+Fields are named in `shake_case` since it's more common for our stack and [20% easier to read](http://ieeexplore.ieee.org/xpl/articleDetails.jsp?tp=&arnumber=5521745).
 
 ## Versioning
 
@@ -77,6 +84,27 @@ To use our service you need to authenticate your application. Authentication to 
 ```curl
 curl https://example.com/resource \
    -u WgLodNU5wCdbSw4f:
+```
+
+## Request structure
+
+Request consist with a root object that contain resource and metadata as it's childs:
+
+**Request example:**
+
+```json
+{
+  "resource": {
+    "name": "Alex",
+    "surname": "Gray",
+    "email": "me@example.com",
+    "credentials: [
+      {"method": "passsword", "password": "notasecret"}
+    ]
+  },
+  "format_response": true,
+  "redirect_browser": true
+}
 ```
 
 ## Response structure
@@ -208,8 +236,8 @@ Entry Type | Description
 --------- | -----------
 `json_data_proprty` | JSON document is invalid. `entry` will contain JSON Path to invalid property.
 `form_data_field` | HTTP request field (for `form-data` requests) is invalid. 
-`request_query_param` | HTTP query parameter is invalid.
-`request` | Mailformed request body.
+`query_param` | HTTP query parameter is invalid.
+`body` | Mailformed request body.
 `header` | HTTP request header is invalid.
 
 ### Validation Rules
@@ -224,8 +252,8 @@ Rule | Params | Description
 `inclusion` | `[enum]` | Field value should be in `enum`.
 `exclusion` | `[enum]` | Field value should NOT be in `enum`.
 `subset` | `[set]` | Field value should be subset of `set`.
-`length` | `[min:_, max:_, is:_, exclusive:true|false]` | List or string length should be equal to `is` value, less than `max` and bigger than `min` value. Params is optional, but one of them should always be present. `exclusive` is false by default.
-`number` | `[greater_than:_, less_than:_, greater_than_or_equal_to:_, less_than_or_equal_to:_, multiple_of:_, ]` | The field value must be a number that is greater than `greater_than` and less than `less_than`.
+`length` | `{min:_, max:_, is:_, exclusive:true|false}` | List or string length should be equal to `is` value, less than `max` and bigger than `min` value. Params is optional, but one of them should always be present. `exclusive` is false by default.
+`number` | `{greater_than:_, less_than:_, greater_than_or_equal_to:_, less_than_or_equal_to:_, multiple_of:_}` | The field value must be a number that is greater than `greater_than` and less than `less_than`.
 `confirmation` | `[]` | The field value of field must match confirmed field (eg. `password_confirmation` should match `password`).
 `acceptance` | `[]` | The field value should be true.
 `email` | `[patterns]` | The field value must be a valid email address respectively to `patterns`.
@@ -235,22 +263,19 @@ Rule | Params | Description
 `unique` | `[]` | The field must be a list with all it's items unique.
 `schemata` | `[]` | JSON Schema specific error core.
 `schema` | `[]` | JSON Schema specific error core.
-`dependency` | `[json_path]` | Property expects another property to exist.
-
-<!-- TODO
-`json` | The field under validation must be a valid JSON string.
-`otp_code` | A valid OTP code.
-`password_strength` | Password field that should include at least one latin letter in lowercase, one letter in uppercase and one number. Min lenght is set by another rule.
-`date`
-`datetime`
-`url`
--->
+`dependency` | `[json_paths]` | Property expects another property to exist.
+`json` | `[]` | The field under validation must be a valid JSON string.
+`authentification_code` | `{resent: true}` | OTP or other authentification code was invalid. User should retry with re-entering it. `resent` property will tel is code was automatically resent upon failed validation.
+`date`, `datetime`, `timestamp` | `[after:_, before:_, after_or_at:_, before_or_at:_]` | Invalid datetime representation.
+`url` | `[patterns]` | Field should contain a valid URL.
 
 ## Pagination
 
 All top-level API resources with root type `list` have support of pagination over a "list" API methods. These methods share a common structure, taking at least these three parameters: `limit`, `starting_after`, and `ending_before`.
 
-API utilizes cursor-based pagination via the `starting_after` and `ending_before` parameters. Both take an existing object ID value (see below). The ```ending_before``` parameter returns objects created before the named object, in descending chronological order. The `starting_after` parameter returns objects created after the named object, in ascending chronological order. If both parameters are provided, only ending_before is used.
+### Cursor-Based
+
+Recommended way is to provide a cursor-based pagination via the `starting_after` and `ending_before` parameters. Both take an existing object ID value (see below). The ```ending_before``` parameter returns objects created before the named object, in descending chronological order. The `starting_after` parameter returns objects created after the named object, in ascending chronological order. If both parameters are provided, only ending_before is used.
 
 Arguments:
 
@@ -258,16 +283,28 @@ Arguments:
 - `starting_after` (optional) - A cursor for use in pagination. `starting_after` is an object ID that defines your place in the list. For instance, if you make a list request and receive 100 objects, ending with ```obj_foo```, your subsequent call can include `starting_after=obj_foo` in order to fetch the next page of the list;
 - `ending_before` (optional) - A cursor for use in pagination. `ending_before` is an object ID that defines your place in the list. For instance, if you make a list request and receive 100 objects, starting with ```obj_bar```, your subsequent call can include `ending_before=obj_bar` in order to fetch the previous page of the list.
 
+### Offset-Based Pagination
+
+Sometimes you might want to give your users ability to traverse trough pages, in this case offset-based pagination MAY be available.
+
+Arguments:
+
+- `limit` (optional) - A limit on the number of objects to be returned, between 1 and 100. Default: 50;
+- `offset` (optional) - This offsets the start of each page by the number specified.
+
+_This method is not resommended, whenever you users want to traverse history it's better to give them ability to query data and apply cursor based pagination on it's results._
+
 ## Content Type
 
 You should send `Content-Type` header in all your requests, otherwise API will return HTTP 415 status. Right now we support two content types:
 
 - `application/json` - Response is sent in a JSON format.
 - `text/csv` - Response is trimmed to a requested resource and sent in a CSV format.
+- `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` - Response is trimmed to a requested resource and sent in a XLSX format.
 
 This header doesn't affect any outgoing requests, they are always sent in JSON format.
 
-> To make CSV look better in spreadsheets viewers we are stripping all response metadata (everything except data that is returned in `data` field).
+> To make CSV look better in spreadsheets viewers we are stripping all response metadata (everything except data that is returned in `data` field). All embed collections will be embedded with root property name prefix, all collections will be flattened to a single line divided by `|`.
 
 ## Timezones
 
@@ -288,7 +325,7 @@ Each API request has an associated request identifier. You can find it in ```X-R
 
 You can also find request identifiers in the URLs of individual request logs in your Dashboard. If you need to contact us about a specific request, providing the request identifier will ensure the fastest possible resolution.
 
-All Request ID's are prefixed with a human-readable name of server that served your request. (Yes, we give names to all our servers.)
+All Request ID's are prefixed with a human-readable name of server that served your request.
 
 ```
 X-Request-ID: flash-99spDSoim3i
@@ -329,6 +366,30 @@ Inspired by Twitter API, Youtube API and [github issue](https://github.com/yahoo
 7. If the upload processes still haven't finished after the timeout, the server close the network transaction, marks the metadata record as aborted. Responds to further upload requests with reject messages.
 
 # Optional Features
+
+## Resource Actions
+
+Whenever you want to implement a business process or a Finite-State Machine that is controlled trough an API you must start from listing an [afforances](https://en.wikipedia.org/wiki/Affordance) that is available for current resource (client may decide which actionable items will be available for front-end consumer based on them):
+
+```json
+{
+  "data": {
+    "id": 1,
+    "author": "Drew",
+    "message": "Hola, como estas?"
+    "afforances": [
+      {"action": "approve", "url": "https://example.com/resources/1/actions/approve"},
+      {"action": "decline", "url": "https://example.com/resources/1/actions/decline"}
+    ]
+  }
+}
+```
+
+Thus API consumer can make request to an action url to initiate a state transition.
+
+References:
+- (HATEOAS)[https://en.wikipedia.org/wiki/HATEOAS]
+- (Resource Blueprint)[https://github.com/resource-blueprint/resource-blueprint#def-syntax]
 
 ## Updating relations with parent resource
 
@@ -423,12 +484,11 @@ All ID's have a human-readable prefix that carries first 3 characters from a ent
 
 The API supports idempotency for safely retrying write requests without accidentally performing the same operation twice. For example, if a request to create a charge fails due to a network connection error, you can retry the request with the same idempotency key to guarantee that only a single charge is created.
 
-To perform an idempotent request, attach a unique key to any ```POST```, ```DELETE``` or ```PUT``` request made to the API via the ```Idempotency-Key: <key>``` header.
+To perform an idempotent request, attach a unique key to any `POST`, `PATCH` or `DELETE` request made to the API via the `Idempotency-Key: <key>` header.
 
-How you create unique keys is completely up to you. We suggest using random strings or UUIDs. We'll always send back the same response for requests made with the same key. However, you cannot use the same key with different request parameters (We will return ```HTTP 400``` error in this case). The keys expire after 24 hours.
+How you create unique keys is completely up to you. We suggest using random strings or UUIDs. We'll always send back the same response for requests made with the same key. However, you cannot use the same key with different request parameters we will return `HTTP 400` error. The keys expire after 24 hours.
 
-If you have an "Account" entity, within your system, than one of best ways to generate right Idempotency key is to add a additional property ```nonce``` to a Account, and re-generate it every time transaction is created. Thus you will be sure that there no way to create a transaction without knowing latest state of the user account.
-
+> If you have an "Account" entity, within your system, one of best ways to generate right Idempotency key is to add a additional property `nonce` to a Account, and re-generate it every time transaction is created. Thus you will be sure that there no way to create a transaction without knowing latest state of the user account.
 
 ## Limiting Response Fields
 
@@ -609,6 +669,8 @@ Aggregate is an object with at least 2 fields:
   ]
 }
 ```
+
+**Response:**
 
 ```json
 {
@@ -813,7 +875,7 @@ This way of thinking gives additional values:
 
 ### Key Value
 
-K-V objects are stored in a JSONB (or similar) structures. Not K-V tables are needed.
+K-V objects are stored in a JSONB (or similar) structures. No K-V tables are needed.
 
 # Apiary Data Structure Helpers
 
@@ -823,7 +885,7 @@ K-V objects are stored in a JSONB (or similar) structures. Not K-V tables are ne
 ### `Response_Collection`
 + meta (Response__Meta, fixed-type)
 + data (array[], fixed-type)
-+ paging (Response__Pagination, fixed-type)
++ paging (Response__Pagination_Cursor, fixed-type)
 
 ### `Response_OK`
 + meta (Response__Meta, fixed-type)
@@ -861,10 +923,16 @@ K-V objects are stored in a JSONB (or similar) structures. Not K-V tables are ne
     + rule: required (string) - String constant that represents validation rule type. List of all types can be found in [API Manifest](http://docs.apimanifest.apiary.io/#introduction/interacting-with-api/errors).
     + params (array) - Validation Parameters.
 
-### `Response__Pagination`
+### `Response__Pagination_Cursor`
 + limit: 20 (number) - A limit on the number of objects to be returned, between 1 and 100. Default: 50.
++ size: 1000 (number) - Total number of objects in collection.
++ has_more: true
 + cursors (object)
     + `starting_after`: 56c31536a60ad644060041af (string) - A cursor for use in pagination. An object ID that defines your place in the list. For instance, if you make a list request and receive 100 objects, ending with `obj_foo`, your subsequent call can include `starting_after=obj_foo` in order to fetch the next page of the list.
     + `ending_before`: 56c31536a60ad644060041aa (string) - A cursor for use in pagination. An object ID that defines your place in the list. For instance, if you make a list request and receive 100 objects, starting with `obj_bar`, your subsequent call can include `ending_before=obj_bar` in order to fetch the previous page of the list.
-+ has_more: false
+
+### `Response__Pagination_Offset`
++ limit: 20 (number) - A limit on the number of objects to be returned, between 1 and 100. Default: 50.
++ size: 1000 (number) - Total number of objects in collection.
++ offset: 10 (number) - Offset of first item on current page.
 ```
