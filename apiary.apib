@@ -385,11 +385,15 @@ Whenever you want to implement a business process or a Finite-State Machine that
 }
 ```
 
-Thus API consumer can make request to an action url to initiate a state transition.
+Thus API consumer MAY make request to an action url to initiate a state transition.
+
+API design in this case MUST have a [FSM description](http://madebyevan.com/fsm/).
+
+> Before adding an actionable transitions it's better to thing twice how can be this done in other methods, since they make API much more complicated for consumers and developers.
 
 References:
-- (HATEOAS)[https://en.wikipedia.org/wiki/HATEOAS]
-- (Resource Blueprint)[https://github.com/resource-blueprint/resource-blueprint#def-syntax]
+- [HATEOAS](https://en.wikipedia.org/wiki/HATEOAS)
+- [Resource Blueprint](https://github.com/resource-blueprint/resource-blueprint#def-syntax)
 
 ## Updating relations with parent resource
 
@@ -872,6 +876,14 @@ This way of thinking gives additional values:
 
 - It is simples to visually see related objects and developers may group them togather.
 - It's easier to notice when object gets more fields and when it's better to crate separate resource for it.
+
+### Boolean Fields
+
+Should have `is_` prefix, which allows to understand type of field by it's name.
+
+### Date/Time Fields
+
+May continue with `_at` suffix.
 
 ### Key Value
 
